@@ -1,7 +1,6 @@
 module Arkanoid (run) where
 
 import Import
-import qualified ImportText as T
 import qualified ImportRaylib as R
 import RIO.List (unfoldr)
 import Control.Monad.Loops(unfoldrM)
@@ -38,6 +37,7 @@ data Brick = Brick
     { pos :: R.Vector2
     , size :: R.Vector2
     , bounds :: R.Rectangle
+    , boldColor :: Bool
     , active :: Bool
     } deriving Show
 
@@ -50,8 +50,17 @@ data GameState = GameState
     , paused :: Bool
     , player :: Player
     , ball :: Ball
-    , bricks :: [Brick]
+    , bricks :: [[Brick]]
     } deriving Show
+
+logoScreenTime :: Integer
+logoScreenTime = 30
+
+bricksLines :: Float -- y axis
+bricksLines  = 5
+
+bricksPerLine :: Float -- x axis
+bricksPerLine = 20
 
 run :: () -> RIO App ()
 run _ = do
@@ -84,28 +93,35 @@ run _ = do
             , paused = False
             , player
             , ball
-            , bricks = makeBricks 10 2
+            , bricks = makeBricks (fromIntegral width) (round bricksPerLine) (round bricksLines)
             }
     liftIO $ do
         R.setExitKey R.KeyNull
         R.withWindow width height "Arkanoid" 60 (loop initialState)
     logInfo "END GAME"
 
--- TODO
-makeBricks :: Int -> Int -> [Brick]
-makeBricks x y =
-    unfoldr f x
+makeBricks :: Float -> Int -> Int -> [[Brick]]
+makeBricks width limX limY = unfoldr fy limY
     where
-        f b =
-            if b < x
-                then Nothing
-                else Just (makeBrick b, b - 1)
-        makeBrick :: Int -> Brick
-        makeBrick b = Brick (R.Vector2 (fromIntegral b) 0) ( R.Vector2 0 0) (R.Rectangle 0 0 1 1) True
+        fy :: Int -> Maybe ([Brick], Int)
+        fy y = if y < 1 then Nothing else Just (unfoldr (fx y) limX, y - 1)
+        fx :: Int -> Int -> Maybe (Brick, Int)
+        fx y x = if x < 1 then Nothing else Just (makeBrick (fromIntegral x) (fromIntegral y), x - 1)
+        size = R.Vector2 (width / bricksPerLine ) 20
+        makeBrick :: Float -> Float -> Brick
+        makeBrick x y = Brick
+            { pos = R.Vector2 posX posY
+            , size
+            , bounds = R.Rectangle posX posY size.vector2'x size.vector2'y
+            , boldColor = even @Int . round $ x + y
+            , active = True
+            }
+            where
+                posX = size.vector2'x * x - size.vector2'x
+                posY = size.vector2'y * y - size.vector2'y
 
 loop :: GameState -> R.WindowResources -> IO ()
 loop st window = do
-    T.hPutStrLn stderr $ "loop" <> tshow st
     newState <- update st
     render newState
     shouldClose <- R.windowShouldClose
@@ -115,7 +131,7 @@ update :: GameState -> IO GameState
 update old = do
     case old.screen of
         Logo ->
-            if old.frameCounter > 60
+            if old.frameCounter > logoScreenTime
                 then pure old {screen = Title, frameCounter = 0}
                 else pure old {frameCounter = old.frameCounter + 1}
         Title -> do
@@ -155,6 +171,15 @@ render st = do
                     (round st.player.size.vector2'y)
                     R.black
                 R.drawCircleV st.ball.pos st.ball.radius R.maroon
+                forM_ st.bricks $ \xs ->
+                    forM_ xs $ \x ->
+                        when x.active $
+                        R.drawRectangle
+                            (round x.pos.vector2'x)
+                            (round x.pos.vector2'y)
+                            (round x.size.vector2'x)
+                            (round x.size.vector2'y)
+                            (if x.boldColor then R.gray else R.lightGray)
                 void $ flip unfoldrM st.player.currentLife $ \i -> do
                     liftIO $ R.drawRectangle
                         (20 + 40 * i)
