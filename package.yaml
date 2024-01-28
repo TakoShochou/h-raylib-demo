@@ -51,6 +51,7 @@ default-extensions:
 - DeriveFunctor
 - DeriveGeneric
 - DeriveTraversable
+- DisambiguateRecordFields
 - DoAndIfThenElse
 - DuplicateRecordFields
 - EmptyDataDecls
