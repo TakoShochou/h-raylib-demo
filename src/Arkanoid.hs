@@ -86,6 +86,9 @@ _playerSpeedL = lens player_speed $ \x player_speed -> x {player_speed}
 _playerSizeL :: Lens' Player R.Vector2
 _playerSizeL = lens player_size $ \x player_size -> x {player_size}
 
+_playerBoundsL :: Lens' Player R.Rectangle
+_playerBoundsL = lens player_bounds $ \x player_bounds -> x {player_bounds}
+
 _ballPosL :: Lens' Ball R.Vector2
 _ballPosL = lens ball_pos $ \x ball_pos -> x {ball_pos}
 
@@ -141,6 +144,9 @@ playerSizeXL = playerL . _playerSizeL . R._vector2'x
 playerSizeYL :: Lens' GameState Float
 playerSizeYL = playerL . _playerSizeL . R._vector2'y
 
+playerBoundsL :: Lens' GameState R.Rectangle
+playerBoundsL = playerL . _playerBoundsL
+
 ballL :: Lens' GameState Ball
 ballL = lens state_ball $ \x state_ball -> x {state_ball}
 
@@ -166,7 +172,7 @@ brickSizeYL :: Lens' Brick Float
 brickSizeYL = _brickSizeL . R._vector2'y
 
 --
---
+-- init and loop
 --
 
 run :: () -> RIO App ()
@@ -234,6 +240,10 @@ loop st window = do
     shouldClose <- R.windowShouldClose
     unless shouldClose $ loop newState window
 
+---
+--- update
+---
+
 update :: GameState -> IO GameState
 update old = do
     case view screenL old of
@@ -249,28 +259,45 @@ update old = do
                 else pure st
         GamePlay -> do
             pausePressed <- R.isKeyPressed R.KeySpace
-            let s1 = if pausePressed
-                then
-                    set pausedL (not (view pausedL old)) old
-                else old
-            leftPressed <- R.isKeyDown R.KeyLeft
-            rightPressed <- R.isKeyDown R.KeyRight
-            let nextPos :: Float
-                    = view playerPosXL s1
-                    - (if leftPressed then view playerSpeedXL s1 else 0)
-                    + (if rightPressed then view playerSpeedXL s1 else 0)
-            let widthFloat = fromIntegral $ view widthL s1
-            let nextPos'
-                  | nextPos < 0 = 0
-                  | widthFloat - view playerSizeXL s1 < nextPos = widthFloat - view playerSizeXL s1
-                  | otherwise = nextPos
-            let s2 = set playerPosXL nextPos' s1
-            pure s2
+            if pausePressed
+                then pure $ set pausedL (not (view pausedL old)) old
+                else handlePlayerPosition old >>= handleBallPosition
         Ending -> do
             goToTitle <- R.isKeyPressed R.KeySpace
             if goToTitle
                 then pure $ set screenL Title old
                 else pure $ set frameCounterL 0 old
+
+handlePlayerPosition :: GameState -> IO GameState
+handlePlayerPosition old = do
+    leftPressed <- R.isKeyDown R.KeyLeft
+    rightPressed <- R.isKeyDown R.KeyRight
+    let nextPos :: Float
+            = view playerPosXL old
+            - (if leftPressed then view playerSpeedXL old else 0)
+            + (if rightPressed then view playerSpeedXL old else 0)
+    let widthFloat = fromIntegral $ view widthL old
+    let nextPos'
+            | nextPos < 0 = 0
+            | widthFloat - view playerSizeXL old < nextPos = widthFloat - view playerSizeXL old
+            | otherwise = nextPos
+    let s1 = set playerPosXL nextPos' old
+    let bounds = R.Rectangle
+            (view playerPosXL s1)
+            (view playerPosYL s1)
+            (view playerSizeXL s1)
+            (view playerSizeYL s1)
+    pure $ set playerBoundsL bounds s1
+
+handleBallPosition :: GameState -> IO GameState
+handleBallPosition old = do
+    -- TODO ball active
+    -- TODO ball inactive
+    pure old
+
+---
+--- render
+---
 
 render :: GameState -> IO ()
 render st = do
