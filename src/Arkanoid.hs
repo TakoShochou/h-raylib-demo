@@ -351,17 +351,23 @@ handleBallMovement s0 = do
 
 handleBallVsScreenCollision :: GameState -> IO GameState
 handleBallVsScreenCollision s0 = do
-    let s1 = if view ballPosXL s0 + view ballRadiusL s0 >= fromIntegral (view widthL s0)
-            || view ballPosXL s0 - view ballRadiusL s0 <= 0
+    let s1 = if p1 >= p2 || p3 <= 0
         then over ballSpeedXL (* (-1)) s0
         else s0
     pure $ if view ballPosYL s1 <= 0
         then over ballSpeedYL (* (-1)) s1
         else s1
+    where
+        p1 = view ballPosXL s0 + view ballRadiusL s0
+        p2 = fromIntegral (view widthL s0)
+        p3 = view ballPosXL s0 - view ballRadiusL s0
 
 handleBallVsPlayerCollision :: GameState -> IO GameState
 handleBallVsPlayerCollision s0 = do
-    pure $ if R.checkCollisionCircleRec (view ballPosL s0) (view ballRadiusL s0) (view playerBoundsL s0)
+    pure $ if R.checkCollisionCircleRec
+            (view ballPosL s0)
+            (view ballRadiusL s0)
+            (view playerBoundsL s0)
         then over ballSpeedYL (* (-1))
             $ set ballSpeedXL x
             s0
@@ -369,7 +375,7 @@ handleBallVsPlayerCollision s0 = do
     where
         x = (a - b) / c * 5
         a = view ballPosXL s0
-        b = view playerPosXL s0 - view playerSizeXL s0 / 2
+        b = view playerPosXL s0 + view playerSizeXL s0 / 2
         c = view playerSizeXL s0
 
 -- TODO
@@ -379,13 +385,15 @@ handleBallVsBricksCollision s0 = do
 
 handleGameEndingLogic :: GameState -> IO GameState
 handleGameEndingLogic s0 = do
-    pure $ if round (view ballPosYL s0 + view ballRadiusL s0) >= view heightL s0
+    pure $ if round p1 >= view heightL s0
         then set ballPosXL (view playerPosXL s0 + view playerSizeXL s0 / 2)
             $ set ballPosYL (view playerPosYL s0 - view ballRadiusL s0 - 1)
             $ set ballSpeedL (R.Vector2 0 0)
             $ set ballActiveL False
             $ over playerCurrentLifeL (subtract 1) s0
         else s0
+    where
+        p1 = view ballPosYL s0 + view ballRadiusL s0
 
 handleRetryLogic :: GameState -> IO GameState
 handleRetryLogic s0 = do
