@@ -330,7 +330,8 @@ handleBallPosition old = do
         whenActive st = do
             handleBallMovement st
                 >>= handleBallVsScreenCollision
-                -- TODO collision detection and resolution
+                >>= handleBallVsPlayerCollision
+                >>= handleBallVsBricksCollision
                 >>= handleGameEndingLogic
                 >>= handleRetryLogic
         whenInactive :: GameState -> IO GameState
@@ -357,6 +358,24 @@ handleBallVsScreenCollision s0 = do
     pure $ if view ballPosYL s1 <= 0
         then over ballSpeedYL (* (-1)) s1
         else s1
+
+handleBallVsPlayerCollision :: GameState -> IO GameState
+handleBallVsPlayerCollision s0 = do
+    pure $ if R.checkCollisionCircleRec (view ballPosL s0) (view ballRadiusL s0) (view playerBoundsL s0)
+        then over ballSpeedYL (* (-1))
+            $ set ballSpeedXL x
+            s0
+        else s0
+    where
+        x = (a - b) / c * 5
+        a = view ballPosXL s0
+        b = view playerPosXL s0 - view playerSizeXL s0 / 2
+        c = view playerSizeXL s0
+
+-- TODO
+handleBallVsBricksCollision :: GameState -> IO GameState
+handleBallVsBricksCollision s0 = do
+    pure s0
 
 handleGameEndingLogic :: GameState -> IO GameState
 handleGameEndingLogic s0 = do
