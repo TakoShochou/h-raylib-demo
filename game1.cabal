@@ -49,6 +49,7 @@ library
       DeriveFunctor
       DeriveGeneric
       DeriveTraversable
+      DisambiguateRecordFields
       DoAndIfThenElse
       DuplicateRecordFields
       EmptyDataDecls
@@ -109,6 +110,7 @@ executable game1-exe
       DeriveFunctor
       DeriveGeneric
       DeriveTraversable
+      DisambiguateRecordFields
       DoAndIfThenElse
       DuplicateRecordFields
       EmptyDataDecls
@@ -173,6 +175,7 @@ test-suite game1-test
       DeriveFunctor
       DeriveGeneric
       DeriveTraversable
+      DisambiguateRecordFields
       DoAndIfThenElse
       DuplicateRecordFields
       EmptyDataDecls

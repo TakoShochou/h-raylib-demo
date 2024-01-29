@@ -10,13 +10,16 @@ import Control.Monad.Loops(unfoldrM)
 --
 
 logoScreenTime :: Integer
-logoScreenTime = 60
+logoScreenTime = 30
 
 bricksLines :: Float -- y axis
 bricksLines  = 5
 
 bricksPerLine :: Float -- x axis
 bricksPerLine = 20
+
+playerLife :: Int
+playerLife = 5
 
 --
 -- types
@@ -92,8 +95,14 @@ _playerBoundsL = lens player_bounds $ \x player_bounds -> x {player_bounds}
 _ballPosL :: Lens' Ball R.Vector2
 _ballPosL = lens ball_pos $ \x ball_pos -> x {ball_pos}
 
+_ballSpeedL :: Lens' Ball R.Vector2
+_ballSpeedL = lens ball_speed $ \x ball_speed -> x {ball_speed}
+
 _ballRadiusL :: Lens' Ball Float
 _ballRadiusL = lens ball_radius $ \x ball_radius -> x {ball_radius}
+
+_ballActiveL :: Lens' Ball Bool
+_ballActiveL = lens ball_active $ \x ball_active -> x {ball_active}
 
 _brickPosL :: Lens' Brick R.Vector2
 _brickPosL = lens brick_pos $ \x brick_pos -> x {brick_pos}
@@ -116,9 +125,6 @@ heightL = lens state_height $ \x state_height -> x {state_height}
 
 frameCounterL :: Lens' GameState Integer
 frameCounterL = lens state_frameCounter $ \x state_frameCounter -> x {state_frameCounter}
-
-resultL :: Lens' GameState (Maybe GameResult)
-resultL = lens state_result $ \x state_result -> x {state_result}
 
 pausedL :: Lens' GameState Bool
 pausedL = lens state_paused $ \x state_paused -> x {state_paused}
@@ -153,8 +159,26 @@ ballL = lens state_ball $ \x state_ball -> x {state_ball}
 ballPosL :: Lens' GameState R.Vector2
 ballPosL = ballL . _ballPosL
 
+ballPosXL :: Lens' GameState Float
+ballPosXL = ballPosL . R._vector2'x
+
+ballPosYL :: Lens' GameState Float
+ballPosYL = ballPosL . R._vector2'y
+
+ballSpeedL :: Lens' GameState R.Vector2
+ballSpeedL = ballL . _ballSpeedL
+
+ballSpeedXL :: Lens' GameState Float
+ballSpeedXL = ballL . _ballSpeedL . R._vector2'x
+
+ballSpeedYL :: Lens' GameState Float
+ballSpeedYL = ballL. _ballSpeedL . R._vector2'y
+
 ballRadiusL :: Lens' GameState Float
 ballRadiusL = ballL . _ballRadiusL
+
+ballActiveL :: Lens' GameState Bool
+ballActiveL = ballL . _ballActiveL
 
 bricksL :: Lens' GameState [[Brick]]
 bricksL = lens state_bricks $ \x state_bricks -> x {state_bricks}
@@ -181,18 +205,22 @@ run _ = do
     let
         width :: Int = env.appOptions.optionsWidth
         height :: Int = env.appOptions.optionsHeight
+        playerWidth :: Float = fromIntegral width / 10
+        playerHeight :: Float = fromIntegral height / 30
+        playerPosX :: Float = fromIntegral width / 2 - playerWidth / 2
+        playerPosY :: Float = fromIntegral height*7/8
         state_player = Player
-            { player_maxLife = 3
-            , player_currentLife = 3
-            , player_pos = R.Vector2 (fromIntegral width/2 - 50) (fromIntegral height*7/8)
+            { player_maxLife = playerLife
+            , player_currentLife = playerLife
+            , player_pos = R.Vector2 playerPosX playerPosY
             , player_speed = R.Vector2 8 8
-            , player_size = R.Vector2 (fromIntegral width / 10) (fromIntegral height / 30)
+            , player_size = R.Vector2 playerWidth playerHeight
             , player_bounds = R.Rectangle 0 0 1 1
             }
         state_ball = Ball
             { ball_pos = R.Vector2
-                (state_player.player_pos.vector2'x + state_player.player_size.vector2'x/2)
-                (state_player.player_pos.vector2'y - state_ball.ball_radius*4)
+                (playerPosX + playerWidth/2)
+                (playerPosY - state_ball.ball_radius*4)
             , ball_speed = R.Vector2 4 4
             , ball_radius = fromIntegral width / 50
             , ball_active = False
@@ -252,16 +280,19 @@ update old = do
                 then pure $ set screenL Title $ set frameCounterL 0 old
                 else pure $ over frameCounterL (+ 1) old
         Title -> do
-            let st = over frameCounterL (+ 1) old
+            let s1 = over frameCounterL (+ 1) old
             playGame <- R.isKeyPressed R.KeySpace
             if playGame
-                then pure $ set screenL GamePlay st
-                else pure st
+                then pure $ set screenL GamePlay s1
+                else pure s1
         GamePlay -> do
             pausePressed <- R.isKeyPressed R.KeySpace
-            if pausePressed
+            s1 <- if pausePressed
                 then pure $ set pausedL (not (view pausedL old)) old
-                else handlePlayerPosition old >>= handleBallPosition
+                else pure old
+            if view pausedL s1
+                then pure s1
+                else handlePlayerPosition s1 >>= handleBallPosition
         Ending -> do
             goToTitle <- R.isKeyPressed R.KeySpace
             if goToTitle
@@ -291,9 +322,59 @@ handlePlayerPosition old = do
 
 handleBallPosition :: GameState -> IO GameState
 handleBallPosition old = do
-    -- TODO ball active
-    -- TODO ball inactive
-    pure old
+     if view ballActiveL old
+        then whenActive old
+        else whenInactive old
+    where
+        whenActive :: GameState -> IO GameState
+        whenActive st = do
+            handleBallMovement st
+                >>= handleBallVsScreenCollision
+                -- TODO collision detection and resolution
+                >>= handleGameEndingLogic
+                >>= handleRetryLogic
+        whenInactive :: GameState -> IO GameState
+        whenInactive st = do
+            let ballPosX :: Float = view playerPosXL st + view playerSizeXL st / 2
+            spacePressed <- R.isKeyPressed R.KeySpace
+            pure $ if spacePressed
+                then set ballActiveL True
+                    $ set ballSpeedL (R.Vector2 0 (-5))
+                    $ set ballPosXL ballPosX st
+                else set ballPosXL ballPosX st
+
+handleBallMovement :: GameState -> IO GameState
+handleBallMovement s0 = do
+    pure $ over ballPosXL (+ view ballSpeedXL s0)
+        $ over ballPosYL (+ view ballSpeedYL s0) s0
+
+handleBallVsScreenCollision :: GameState -> IO GameState
+handleBallVsScreenCollision s0 = do
+    let s1 = if view ballPosXL s0 + view ballRadiusL s0 >= fromIntegral (view widthL s0)
+            || view ballPosXL s0 - view ballRadiusL s0 <= 0
+        then over ballSpeedXL (* (-1)) s0
+        else s0
+    pure $ if view ballPosYL s1 <= 0
+        then over ballSpeedYL (* (-1)) s1
+        else s1
+
+handleGameEndingLogic :: GameState -> IO GameState
+handleGameEndingLogic s0 = do
+    pure $ if round (view ballPosYL s0 + view ballRadiusL s0) >= view heightL s0
+        then set ballPosXL (view playerPosXL s0 + view playerSizeXL s0 / 2)
+            $ set ballPosYL (view playerPosYL s0 - view ballRadiusL s0 - 1)
+            $ set ballSpeedL (R.Vector2 0 0)
+            $ set ballActiveL False
+            $ over playerCurrentLifeL (subtract 1) s0
+        else s0
+
+handleRetryLogic :: GameState -> IO GameState
+handleRetryLogic s0 = do
+    pure $ if view playerCurrentLifeL s0 < 1
+        then set screenL Ending
+            $ set playerCurrentLifeL playerLife
+            $ set frameCounterL 0 s0
+        else s0
 
 ---
 --- render
@@ -326,6 +407,7 @@ render st = do
                             (round (view brickSizeXL x))
                             (round (view brickSizeYL x))
                             (if x.brick_boldColor then R.gray else R.lightGray)
+                R.drawText (show $ view playerCurrentLifeL st) 20 (view heightL st - 50) 50 R.black
                 void $ flip unfoldrM (view playerCurrentLifeL st) $ \i -> do
                     liftIO $ R.drawRectangle
                         (20 + 40 * i)
