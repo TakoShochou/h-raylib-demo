@@ -310,10 +310,14 @@ handlePlayerPosition :: GameState -> IO GameState
 handlePlayerPosition old = do
     leftPressed <- R.isKeyDown R.KeyLeft
     rightPressed <- R.isKeyDown R.KeyRight
+    shiftPressed <- R.isKeyDown R.KeyLeftShift <|> R.isKeyDown R.KeyRightShift
+    let xSpeed = if shiftPressed
+        then old ^. playerSpeedXL / 3
+        else old ^. playerSpeedXL
     let nextPos :: Float
             = view playerPosXL old
-            - (if leftPressed then view playerSpeedXL old else 0)
-            + (if rightPressed then view playerSpeedXL old else 0)
+            - (if leftPressed then xSpeed else 0)
+            + (if rightPressed then xSpeed else 0)
     let widthFloat = fromIntegral $ view widthL old
     let nextPos'
             | nextPos < 0 = 0
