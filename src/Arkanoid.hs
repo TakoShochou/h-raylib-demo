@@ -110,6 +110,12 @@ _brickPosL = lens brick_pos $ \x brick_pos -> x {brick_pos}
 _brickSizeL :: Lens' Brick R.Vector2
 _brickSizeL = lens brick_size $ \x brick_size -> x {brick_size}
 
+_brickBoundsL :: Lens' Brick R.Rectangle
+_brickBoundsL = lens brick_bounds $ \x brick_bounds -> x {brick_bounds}
+
+_brickActiveL :: Lens' Brick Bool
+_brickActiveL = lens brick_active $ \x brick_active -> x {brick_active}
+
 --
 -- top level lenses (including composed ones)
 --
@@ -237,7 +243,7 @@ run _ = do
             , state_bricks = makeBricks (fromIntegral width) bricksPerLine bricksLines
             }
     liftIO $ do
-        R.setExitKey R.KeyNull
+        -- TODO not working R.setExitKey R.KeyNull
         R.withWindow width height "Arkanoid" 60 (loop initialState)
     logInfo "END GAME"
 
@@ -286,13 +292,14 @@ update old = do
                 then pure $ set screenL GamePlay s1
                 else pure s1
         GamePlay -> do
-            pausePressed <- R.isKeyPressed R.KeySpace
+            pausePressed <- R.isKeyPressed R.KeyP
             s1 <- if pausePressed
                 then pure $ set pausedL (not (view pausedL old)) old
                 else pure old
             if view pausedL s1
                 then pure s1
                 else handlePlayerPosition s1 >>= handleBallPosition
+            -- TODO game clear logic
         Ending -> do
             goToTitle <- R.isKeyPressed R.KeySpace
             if goToTitle
@@ -378,10 +385,23 @@ handleBallVsPlayerCollision s0 = do
         b = view playerPosXL s0 + view playerSizeXL s0 / 2
         c = view playerSizeXL s0
 
--- TODO
 handleBallVsBricksCollision :: GameState -> IO GameState
 handleBallVsBricksCollision s0 = do
-    pure s0
+    pure handleCollision
+    where
+        ballPos = s0 ^. ballPosL
+        ballRadius = s0 ^. ballRadiusL
+        p1 brick = brick ^. _brickActiveL
+        p2 brick = R.checkCollisionCircleRec ballPos ballRadius (brick ^. _brickBoundsL)
+        handleCollision :: GameState
+        handleCollision = do
+            let result :: [[(Brick, Bool)]] =
+                    fmap (\x -> if p1 x && p2 x then (set _brickActiveL False x, True) else (x, False))
+                        <$> (s0 ^. bricksL)
+            let bricks = fmap fst <$> result
+            let shouldBallBound = any (any snd) result
+            set bricksL bricks
+                $ over ballSpeedYL (if shouldBallBound then (* (- 1)) else id) s0
 
 handleGameEndingLogic :: GameState -> IO GameState
 handleGameEndingLogic s0 = do
@@ -397,7 +417,7 @@ handleGameEndingLogic s0 = do
 
 handleRetryLogic :: GameState -> IO GameState
 handleRetryLogic s0 = do
-    pure $ if view playerCurrentLifeL s0 < 1
+    pure $ if s0 ^. playerCurrentLifeL < 1
         then set screenL Ending
             $ set playerCurrentLifeL playerLife
             $ set frameCounterL 0 s0
